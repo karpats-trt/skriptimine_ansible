@@ -1,0 +1,35 @@
+
+---
+- name: Full php uninstall from clients
+  hosts: webservers
+
+  tasks:
+    - name: Debian uninstall
+      apt:
+        name:
+          - "php*"
+          - "libapache2-mod-php*"
+        state: absent
+        purge: yes
+        autoremove: yes
+      when: ansible_os_family == "Debian"
+      notify: Apache restart
+
+    - name: CentOS uninstall
+      dnf:
+        name: "php*"
+        state: absent
+        autoremove: yes
+      when: ansible_os_family == "RedHat"
+      notify: Apache restart
+
+    - name: Remove phpinfo.php
+      file:
+        path: /var/www/html/phpinfo.php
+        state: absent
+
+  handlers:
+    - name: Apache restart
+      service:
+        name: "{{ 'apache2' if ansible_os_family == 'Debian' else 'httpd' }}"
+        state: restarted
