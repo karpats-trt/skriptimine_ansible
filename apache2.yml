@@ -1,0 +1,81 @@
+
+---
+- hosts: webservers
+  become: true
+  vars:
+    apache_pkg: "{{ 'apache2' if ansible_os_family == 'Debian' else 'httpd' }}"
+    apache_service: "{{ 'apache2' if ansible_os_family == 'Debian' else 'httpd' }}"
+    userdir_conf_path: >-
+        {% if ansible_os_family == 'Debian' %}
+        /etc/apache2/mods-available/userdir.conf
+        {% else %}
+        /etc/httpd/conf.d/userdir.conf
+        {% endif %}
+  tasks:
+    - name: Installime apache2
+      package:
+        name: "{{ apache_pkg }}"
+        state: latest
+
+    - name: Loome kasutajale public_html kataloogi
+      file:
+        path=/home/markus/public_html
+        owner=markus
+        group=markus
+        mode=0755
+        state=directory
+
+    - name: Lubame userdir mod
+      apache2_module: name=userdir state=present
+      when: ansible_os_family == "Debian"
+
+    - name: Teeme userdir.conf korda
+      copy:
+        dest: "{{ userdir_conf_path | trim }}"
+        content: |
+            <IfModule mod_userdir.c>
+                UserDir public_html
+
+                <Directory /home/*/public_html>
+                    AllowOverride FileInfo AuthConfig Limit Indexes
+                    Options MultiViews Indexes SymLinksIfOwnerMatch IncludesNoExec
+                    Require all granted
+                </Directory>
+            </IfModule>
+      notify: Apache2 restart
+      
+    - name: Anname home directory execute õigused
+      file:
+        path=/home/markus
+        owner=markus
+        group=markus
+        mode=0711
+
+    - name: Lubame SELinuxil kodukataloogi faile muuta (CentOS)
+      seboolean:
+        name: httpd_enable_homedirs
+        state: yes
+        persistent: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Tekitame index.html faili kasutaja public_html kataloogi
+      copy:
+        dest: /home/markus/public_html/index.html
+        content: "<h1>Tere tulemast! See leht asub serveris {{ ansible_hostname }}, IP-aadressil {{ ansible_default_ipv4.address }}</h1>"
+        owner: markus
+        group: markus
+        mode: 0644
+
+    - name: Ava tulemüüris port 80 (CentOS)
+      firewalld:
+        service: http
+        permanent: true
+        state: enabled
+        immediate: true
+      when: ansible_os_family == "RedHat"
+
+  handlers:
+    - name: Apache2 restart
+      service:
+        name: "{{ apache_service }}"
+        state: restarted
